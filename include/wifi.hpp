@@ -20,43 +20,14 @@ class WifiManager
     public:
     enum class Status : uint8_t {Disconnected, Connecting, Connected};
 
-    /** Init wifi and start management task */
-    explicit WifiManager(QueueHandle_t statusQueue = nullptr) : _statusQueue(statusQueue)
-    {
-        // Init wifi
-        init_wifi();
-        // Start RTOS Task
-        xTaskCreatePinnedToCore(
-            taskEntry,
-            "WifiManager",
-            4096,
-            this,
-            3,
-            nullptr,
-            tskNO_AFFINITY
-        );
-    };
-
-    /** stop wifi and unregister handlers */
-    ~WifiManager()
-    {
-        _terminate.store(true); // delete task
-        esp_wifi_stop();
-        esp_event_handler_instance_unregister(
-            WIFI_EVENT,
-            ESP_EVENT_ANY_ID,
-            _wifiEvtInst
-        );
-        esp_event_handler_instance_unregister(
-            IP_EVENT,
-            IP_EVENT_STA_GOT_IP,
-            _ipEvtInst
-        );
-    };
-
-    /** Get current wifi status */
+    /* Init wifi and start management task */
+    explicit WifiManager(QueueHandle_t statusQueue = nullptr);    
+    /* stop wifi and unregister handlers */
+    ~WifiManager();
+    /* Get current wifi status */
     Status current() const noexcept { return _status.load(); }
-
+    /* is manager initialized correctly */
+    bool isValid() {return _initialized;};
     
     private:
     /** Setup wifi and event handlers */
@@ -75,8 +46,12 @@ class WifiManager
 
     QueueHandle_t _statusQueue{};
     esp_event_handler_instance_t _wifiEvtInst{}, _ipEvtInst{};
-    EventGroupHandle_t _eg{xEventGroupCreate()};
+    EventGroupHandle_t _eg{nullptr};
+    TaskHandle_t _taskHandle{};
+    bool _initialized{false};
 
     static constexpr EventBits_t CONNECTED_BIT = BIT0;
     static constexpr EventBits_t DISCONNECTED_BIT =  BIT1;
+    static constexpr uint32_t BACKOFF_MS = 1000;
+    static constexpr uint32_t BACKOFF_MAX_MS = 32000;
 };
