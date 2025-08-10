@@ -1,5 +1,6 @@
 #include "wifi.hpp"
 #include "mqtt.hpp"
+#include "soil_sensor.hpp"
 
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -9,20 +10,41 @@
 
 void taskPublish(void* arg) {
     auto* mqttManager = static_cast<MqttManager*>(arg);
+    
+    SoilMoistureSensor soilSensor{};
+    
+    if (!soilSensor.isValid()) {
+        ESP_LOGE("PUBLISH", "Failed to initialize soil sensor");
+        vTaskDelete(nullptr);
+        return;
+    }
+
+    char buffer[16];
+    
     for(;;) {
-        // Wait for MQTT connection
         if (mqttManager->waitForConnection(pdMS_TO_TICKS(5000))) {
-            esp_err_t result1 = mqttManager->queuePublish("sensor/temperature", "23.5", 0);
-            esp_err_t result2 = mqttManager->queuePublish("sensor/humidity", "45.2", 0);
+            // Read soil moisture 
+            int moisturePercent = soilSensor.readMoisturePercent();
+            int rawValue = soilSensor.readRawValue();
             
-            if (result1 != ESP_OK || result2 != ESP_OK) {
-                ESP_LOGW("PUBLISH", "Failed to publish some messages");
+            if (moisturePercent >= 0) {
+                snprintf(buffer, sizeof(buffer), "%d", moisturePercent);
+                esp_err_t result1 = mqttManager->queuePublish("sensor/soil/moisture", buffer, 0);
+                
+                snprintf(buffer, sizeof(buffer), "%d", rawValue);
+                esp_err_t result2 = mqttManager->queuePublish("sensor/soil/raw", buffer, 0);
+                
+                if (result1 != ESP_OK || result2 != ESP_OK) {
+                    ESP_LOGW("PUBLISH", "Failed to publish soil moisture data");
+                } else {
+                    ESP_LOGI("PUBLISH", "Soil moisture: %d%%, Raw: %d", moisturePercent, rawValue);
+                }
             } else {
-                ESP_LOGI("PUBLISH", "Publish successful!");
+                ESP_LOGW("PUBLISH", "Failed to read soil moisture sensor");
             }
         }
         
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(10000)); // Read every 10 seconds
     }
 }
 

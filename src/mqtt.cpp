@@ -8,12 +8,10 @@ MqttManager::MqttManager(QueueHandle_t statusQueue, QueueHandle_t pubQueue)
     // Create config
     esp_mqtt_client_config_t mqtt_cfg = {};
 
-    // Use static string to ensure null termination
     strncpy(_mqttUri, cfg::kMqttBrokerUri.data(), 
             std::min<size_t>(cfg::kMqttBrokerUri.size(), sizeof(_mqttUri) - 1));
     _mqttUri[sizeof(_mqttUri) - 1] = '\0';
     
-    // Use URI instead of hostname/port
     mqtt_cfg.broker.address.uri = _mqttUri;
     mqtt_cfg.network.disable_auto_reconnect = false,
     mqtt_cfg.session.keepalive = 30,
