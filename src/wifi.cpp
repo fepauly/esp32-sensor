@@ -4,43 +4,26 @@
 
 WifiManager::WifiManager(QueueHandle_t statusQueue) : _statusQueue(statusQueue)
 {
-    //Create event group
-    _eg = xEventGroupCreate();
-    if(!_eg) {
-        ESP_LOGE("WIFI", "Failed to create event group!");
-        return;
-    }
     // Init wifi
     init_wifi();
-    // Start RTOS Task
-    xTaskCreatePinnedToCore(
-        taskEntry,
-        "WifiManager",
+
+    // create task
+    _task.emplace(
+        "Wifi Manager",
         4096,
-        this,
+        [this]() { this->run(); },
         3,
-        &_taskHandle,
         tskNO_AFFINITY
     );
 
-    _initialized = true;
+    _initialized = _eg.getHandle() && _task && _task->getHandle();
+
     ESP_LOGI("WIFI", "Wifi manager initialized successfully!");
 }
 
 WifiManager::~WifiManager()
 {
     _terminate.store(true); // delete task
-
-    if(_taskHandle) {
-        for(int i = 0; i < 10 && eTaskGetState(_taskHandle) != eDeleted; i++) {
-            vTaskDelay(pdMS_TO_TICKS(100));
-        }
-
-        if(_taskHandle && eTaskGetState(_taskHandle) != eDeleted) {
-            ESP_LOGW("WIFI", "Task did not terminate correctly, forcing.");
-            vTaskDelete(_taskHandle);
-        }
-    }
 
     esp_event_handler_instance_unregister(
         WIFI_EVENT,
@@ -53,10 +36,6 @@ WifiManager::~WifiManager()
         _ipEvtInst
     );
     esp_wifi_stop();
-
-    if (_eg) {
-        vEventGroupDelete(_eg);
-    }
 };
 
 void WifiManager::init_wifi() 
@@ -107,7 +86,10 @@ void WifiManager::run()
     uint32_t backoffMs = BACKOFF_MS;
 
     for(;;) {
-        if(_terminate.load()) {vTaskDelete(nullptr);}
+        if(_terminate.load()) {
+            ESP_LOGI("WIFI", "Terminating Wifi manager task");
+            return; 
+        }
 
         if (_status.load() == Status::Disconnected) {
             _status.store(Status::Connecting);
@@ -117,11 +99,10 @@ void WifiManager::run()
             esp_wifi_connect();
         }
 
-        EventBits_t bits = xEventGroupWaitBits(
-            _eg,
+        EventBits_t bits = _eg.wait(
             CONNECTED_BIT | DISCONNECTED_BIT,
-            pdTRUE,
-            pdFALSE,
+            false,
+            true,
             pdMS_TO_TICKS(backoffMs)
         );
 
@@ -144,19 +125,13 @@ void WifiManager::notify(Status status) const
     }
 }
 
-void WifiManager::taskEntry(void* arg) 
-{
-    static_cast<WifiManager*>(arg)->run();
-}
-
 void WifiManager::eventHandler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     auto* self = static_cast<WifiManager*>(event_handler_arg);
 
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        xEventGroupClearBits(self->_eg, CONNECTED_BIT);
-        xEventGroupSetBits(self->_eg, DISCONNECTED_BIT);    
+        self->_eg.set(DISCONNECTED_BIT);  
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        xEventGroupSetBits(self->_eg, CONNECTED_BIT);
+        self->_eg.set(CONNECTED_BIT);
     }
 }

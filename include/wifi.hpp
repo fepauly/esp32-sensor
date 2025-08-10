@@ -1,5 +1,7 @@
 #pragma once
 #include "config.hpp"
+#include "freertos_eg.hpp"
+#include "freertos_task.hpp"
 
 #include "esp_wifi.h"
 #include "esp_netif.h"
@@ -10,6 +12,7 @@
 #include "freertos/task.h"
 #include <array>
 #include <atomic>
+#include <optional>
 
 
 /**
@@ -17,7 +20,7 @@
  */
 class WifiManager
 {
-    public:
+public:
     enum class Status : uint8_t {Disconnected, Connecting, Connected};
 
     /* Init wifi and start management task */
@@ -29,15 +32,13 @@ class WifiManager
     /* is manager initialized correctly */
     bool isValid() {return _initialized;};
     
-    private:
+private:
     /** Setup wifi and event handlers */
     void init_wifi();
     /** Main connection loop with backoff retry */
     void run();
     /** Send wifi connection status update to queue */
     void notify(Status status) const;
-    /** Task entry point */
-    static void taskEntry(void* arg);
     /** Handle wifi and IP events */
     static void eventHandler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
@@ -46,9 +47,10 @@ class WifiManager
 
     QueueHandle_t _statusQueue{};
     esp_event_handler_instance_t _wifiEvtInst{}, _ipEvtInst{};
-    EventGroupHandle_t _eg{nullptr};
-    TaskHandle_t _taskHandle{};
     bool _initialized{false};
+
+    FreeRtosEventGroup _eg{"Wifi Events"};
+    std::optional<FreeRtosTask> _task;
 
     static constexpr EventBits_t CONNECTED_BIT = BIT0;
     static constexpr EventBits_t DISCONNECTED_BIT =  BIT1;

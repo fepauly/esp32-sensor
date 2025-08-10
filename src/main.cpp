@@ -54,6 +54,7 @@ extern "C" void app_main() {
     }
 
     // Example publish task
+    // TODO: Use RAII Task Wrapper
     xTaskCreatePinnedToCore(
         taskPublish,
         "Publish",

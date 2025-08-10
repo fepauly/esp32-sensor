@@ -7,10 +7,12 @@
 #include "esp_event.h"
 #include "mqtt_client.h"
 #include <atomic>
+#include <optional>
+#include <array>
 
 struct PublishMessage {
-    char topic[64];
-    char payload[256];
+    std::array<char, 64> topic;
+    std::array<char, 256> payload;
     int qos;
     int retain;
     uint8_t retryCount;
@@ -19,25 +21,23 @@ struct PublishMessage {
 /* Manages mqtt connection */
 class MqttManager
 {
-    public:
-        enum class Status : uint8_t {Connected, Disconnected};
-        explicit MqttManager(QueueHandle_t statusQueue = nullptr, QueueHandle_t pubQueue = nullptr);
-        ~MqttManager();
+public:
+    enum class Status : uint8_t {Connected, Disconnected};
+    explicit MqttManager(QueueHandle_t statusQueue = nullptr, QueueHandle_t pubQueue = nullptr);
+    ~MqttManager();
 
-        /* Publish payload directly */
-        esp_err_t publish(const char* topic, const char* payload, int qos = 0) const;
-        /* Publish payload via queue */
-        esp_err_t queuePublish(const char* topic, const char* payload, int qos = 0) const;
-        /* Get current connection status */
-        Status current() const noexcept { return _status.load(); }
-        /* Wait for connection to mqtt broker */
-        bool waitForConnection(TickType_t timeout);
-        /* manager is correctly initialized */
-        bool isValid() {return _initialized;};
+    /* Publish payload directly */
+    esp_err_t publish(const char* topic, const char* payload, int qos = 0) const;
+    /* Publish payload via queue */
+    esp_err_t queuePublish(const char* topic, const char* payload, int qos = 0) const;
+    /* Get current connection status */
+    Status current() const noexcept { return _status.load(); }
+    /* Wait for connection to mqtt broker */
+    bool waitForConnection(TickType_t timeout);
+    /* manager is correctly initialized */
+    bool isValid() {return _initialized;};
 
-    private:
-    /* Task entry point */
-    static void taskEntry(void* arg);
+private:
     /* Main Loop */
     void run();
     /* Mqtt event handler callback */
@@ -48,8 +48,11 @@ class MqttManager
     esp_mqtt_client_handle_t _client{};
     std::atomic<bool> _terminate{false};
     std::atomic<Status> _status{Status::Disconnected};
-    EventGroupHandle_t _eg{nullptr};
-    TaskHandle_t _taskHandle{};
+    
+    FreeRtosEventGroup _eg{"MQTT Events"};
+    std::optional<FreeRtosTask> _task;
+
+
     char _mqttUri[128]{};
     bool _initialized{false};
 
